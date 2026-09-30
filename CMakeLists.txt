@@ -11,6 +11,7 @@ option(DP3CORE_DYSCO_TENSORSTORE "Build the TensorStore integration (needs CMake
 option(DP3CORE_DYSCO_WERROR "Treat compiler warnings as errors" OFF)
 option(DP3CORE_DYSCO_GSL_CROSSCHECK "Compare the portable tables with GSL-built tables in the tests (if GSL is found)" ON)
 option(BUILD_TESTING "Build the tests" ON)
+option(DP3CORE_DYSCO_PYTHON "Build the Python extension (normally via pip / scikit-build-core)" OFF)
 
 if(DP3CORE_DYSCO_TENSORSTORE)
   # D9 / tensorstore-build-cost.md: TensorStore needs CMake >= 3.24.
@@ -23,6 +24,10 @@ endif()
 include(cmake/Determinism.cmake)
 
 add_subdirectory(core)
+
+if(DP3CORE_DYSCO_PYTHON)
+  add_subdirectory(python)
+endif()
 
 if(BUILD_TESTING)
   enable_testing()

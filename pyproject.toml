@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.13"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "dp3core-dysco"
+version = "0.1.0"
+description = "Dysco lossy compression for radio-interferometric visibilities as Zarr codecs (unofficial DP3Core convention)"
+readme = "README.md"
+license = "GPL-3.0-only"
+license-files = ["LICENSE", "PROVENANCE.md", "third_party/xxhash/LICENSE"]
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26", "zarr>=3.1"]
+
+[project.optional-dependencies]
+numcodecs = ["numcodecs>=0.13"]
+test = ["pytest", "numcodecs>=0.13"]
+
+# Flat entry-point form so the dotted codec names survive (design 7.2).
+[project.entry-points."zarr.codecs"]
+"dp3core.dysco" = "dp3core_dysco.zarr:DyscoCodec"
+"dp3core.dysco-weights" = "dp3core_dysco.zarr:DyscoWeightsCodec"
+
+[project.entry-points."numcodecs.codecs"]
+"dp3core.dysco" = "dp3core_dysco.numcodecs:Dysco"
+"dp3core.dysco-weights" = "dp3core_dysco.numcodecs:DyscoWeights"
+
+[tool.scikit-build]
+minimum-version = "0.10"
+wheel.packages = ["python/dp3core_dysco"]
+cmake.build-type = "Release"
+sdist.exclude = ["build*", ".cache"]
+
+[tool.scikit-build.cmake.define]
+DP3CORE_DYSCO_PYTHON = "ON"
+BUILD_TESTING = "OFF"
+DP3CORE_DYSCO_TENSORSTORE = "OFF"
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
