@@ -12,6 +12,7 @@ endfunction()
 dp3core_dysco_add_test(test_version)
 dp3core_dysco_add_test(test_tables)
 dp3core_dysco_add_test(test_header)
+dp3core_dysco_add_test(test_bitpack)
 
 if(DP3CORE_DYSCO_GSL_CROSSCHECK)
   find_package(GSL QUIET)
@@ -21,4 +22,15 @@ if(DP3CORE_DYSCO_GSL_CROSSCHECK)
   else()
     message(STATUS "GSL not found: skipping test_tables_gsl")
   endif()
+endif()
+
+# Comparison with the original Dysco sources (not part of this repository).
+set(DP3CORE_DYSCO_REFERENCE_DIR "" CACHE PATH
+    "Path to a checkout of aroffringa/dysco; enables test_reference_dysco")
+if(DP3CORE_DYSCO_REFERENCE_DIR)
+  if(NOT EXISTS "${DP3CORE_DYSCO_REFERENCE_DIR}/bytepacker.h")
+    message(FATAL_ERROR "DP3CORE_DYSCO_REFERENCE_DIR does not look like a Dysco checkout")
+  endif()
+  dp3core_dysco_add_test(test_reference_dysco)
+  target_include_directories(test_reference_dysco SYSTEM PRIVATE ${DP3CORE_DYSCO_REFERENCE_DIR})
 endif()

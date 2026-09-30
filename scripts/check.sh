@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Builds and tests every available compiler configuration, with -Werror.
 # Usage: scripts/check.sh [build-root]   (default: ./build-check)
+# Set DP3CORE_DYSCO_REFERENCE_DIR=<aroffringa/dysco checkout> to add the
+# comparison with the original sources.
 # SPDX-License-Identifier: GPL-3.0-only
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -16,6 +18,8 @@ if command -v clang++ >/dev/null; then
   fi
 fi
 generator=()
+extra=()
+[ -n "${DP3CORE_DYSCO_REFERENCE_DIR:-}" ] && extra=(-DDP3CORE_DYSCO_REFERENCE_DIR="$DP3CORE_DYSCO_REFERENCE_DIR")
 command -v ninja >/dev/null && generator=(-G Ninja)
 mkdir -p "$root"
 status=0
@@ -25,7 +29,7 @@ for entry in "${configs[@]}"; do
   echo "=== $name ($cxx $cxxflags, $type)"
   cmake -S . -B "$dir" "${generator[@]}" -DCMAKE_CXX_COMPILER="$cxx" \
     -DCMAKE_CXX_FLAGS="$cxxflags" -DCMAKE_BUILD_TYPE="$type" \
-    -DDP3CORE_DYSCO_WERROR=ON >"$dir.configure.log" 2>&1 || { cat "$dir.configure.log"; status=1; continue; }
+    -DDP3CORE_DYSCO_WERROR=ON "${extra[@]}" >"$dir.configure.log" 2>&1 || { cat "$dir.configure.log"; status=1; continue; }
   cmake --build "$dir" >"$dir.build.log" 2>&1 || { cat "$dir.build.log"; status=1; continue; }
   ctest --test-dir "$dir" --output-on-failure || status=1
 done
