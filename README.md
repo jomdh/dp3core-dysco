@@ -15,7 +15,7 @@ Status: **pre-release, local development only.** Nothing here is published.
    Chunk API in `dp3core/dysco/codec.h` (`EncodeData`, `DecodeData`, `EncodeWeights`,
    `DecodeWeights`, `EncodedSize`, `Validate`). *Working; format still a draft.*
 2. `python/`: Zarr v3 array-to-bytes codecs (`zarr.codecs` entry point) and Zarr v2
-   codecs (`numcodecs.codecs` entry point). *Not started.*
+   codecs (`numcodecs.codecs` entry point). *Working (local builds only).*
 3. `tensorstore/`: TensorStore integration (needs a pinned TensorStore). *Not started.*
 4. DP3Core `io::Codec` adapter: lives in DP3Core, not here.
 
@@ -38,6 +38,25 @@ Comparison with the original: configure with
 variable for `scripts/check.sh`) to build `test_reference_dysco`, which compiles Dysco's
 casacore-free encoders from that checkout (nothing is copied into this repository; GSL
 required) and checks that side data, symbols and decoded values are bit-identical.
+
+## Python
+```sh
+pip install --no-build-isolation .      # needs pybind11 and scikit-build-core
+```
+```python
+import zarr
+from dp3core_dysco.zarr import DyscoCodec, DyscoWeightsCodec
+
+zarr.create_array("vis.zarr", shape=(899, 703, 64, 4), chunks=(10, 703, 64, 4),
+                  dtype="complex64",
+                  serializer=DyscoCodec(bits=10, normalization="af",
+                                        antenna1=a1, antenna2=a2, n_antennas=38),
+                  compressors=[zarr.codecs.Crc32cCodec()])
+```
+Zarr v2: `dp3core_dysco.numcodecs.Dysco(chunk_shape=..., ...)` as the `compressor`, no
+filters. Only the canonical axis order (time, baseline, frequency, polarization) is
+supported; use a `transpose` codec in front for other layouts.
+`scripts/check-python.sh [venv]` builds into a venv and runs the Python tests.
 
 ## Licence
 GPL-3.0-only (see `LICENSE`). This is a derivative work of Dysco, which is published
