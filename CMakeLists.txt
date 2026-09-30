@@ -18,10 +18,10 @@ if(DP3CORE_DYSCO_TENSORSTORE)
   if(CMAKE_VERSION VERSION_LESS 3.24)
     message(FATAL_ERROR "DP3CORE_DYSCO_TENSORSTORE=ON needs CMake >= 3.24 (found ${CMAKE_VERSION}).")
   endif()
-  message(FATAL_ERROR "DP3CORE_DYSCO_TENSORSTORE: the TensorStore layer is not implemented yet (phase P4).")
 endif()
 
 include(cmake/Determinism.cmake)
+enable_testing()
 
 add_subdirectory(core)
 
@@ -29,7 +29,10 @@ if(DP3CORE_DYSCO_PYTHON)
   add_subdirectory(python)
 endif()
 
+if(DP3CORE_DYSCO_TENSORSTORE)
+  add_subdirectory(tensorstore)
+endif()
+
 if(BUILD_TESTING)
-  enable_testing()
   add_subdirectory(core/tests)
 endif()

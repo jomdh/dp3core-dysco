@@ -16,7 +16,8 @@ Status: **pre-release, local development only.** Nothing here is published.
    `DecodeWeights`, `EncodedSize`, `Validate`). *Working; format still a draft.*
 2. `python/`: Zarr v3 array-to-bytes codecs (`zarr.codecs` entry point) and Zarr v2
    codecs (`numcodecs.codecs` entry point). *Working (local builds only).*
-3. `tensorstore/`: TensorStore integration (needs a pinned TensorStore). *Not started.*
+3. `tensorstore/`: registers both codecs with TensorStore's zarr3 driver from our own
+   code (no TensorStore patch), pinned to TensorStore v0.1.85. *Working (local builds only).*
 4. DP3Core `io::Codec` adapter: lives in DP3Core, not here.
 
 The format and algorithms are specified in [`spec/SPEC.md`](spec/SPEC.md).
@@ -62,3 +63,17 @@ supported; use a `transpose` codec in front for other layouts.
 GPL-3.0-only (see `LICENSE`). This is a derivative work of Dysco, which is published
 under GPL version 3. See `PROVENANCE.md`. The vendored xxHash header in
 `third_party/xxhash/` is BSD-2-Clause.
+
+## TensorStore
+```sh
+cmake -S . -B build-ts -G Ninja -DCMAKE_BUILD_TYPE=Release -DDP3CORE_DYSCO_TENSORSTORE=ON
+cmake --build build-ts --target test_tensorstore_codec && build-ts/tensorstore/test_tensorstore_codec
+```
+CMake >= 3.24 and nasm are needed; TensorStore v0.1.85 and its dependencies are fetched
+(override the archive with `-DDP3CORE_DYSCO_TENSORSTORE_URL=file:///...`). Link
+`dp3core_dysco::tensorstore` into the binary or shared library that uses TensorStore; it
+is linked whole-archive so the codec registration (a static initializer) is kept.
+The registration uses TensorStore *internal* headers (`tensorstore/driver/zarr3/codec/`)
+and must be rechecked on every TensorStore version bump.
+`scripts/check-tensorstore.sh [build-dir] [venv]` also runs the zarr-python <-> TensorStore
+interop test (byte-identical chunks, identical decode).
