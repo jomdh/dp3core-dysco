@@ -10,6 +10,10 @@
 
 #include <cmath>
 #include <cstring>
+#include <map>
+#include <mutex>
+#include <tuple>
+#include <utility>
 #include <stdexcept>
 #include <string>
 
@@ -187,6 +191,29 @@ std::uint64_t TableChecksum(const std::vector<float>& table) {
           static_cast<unsigned char>((u >> (8 * b)) & 0xFFu);
   }
   return XXH3_64bits(bytes.data(), bytes.size());
+}
+
+std::shared_ptr<const CachedTable> GetCachedTable(unsigned bits,
+                                                  Distribution distribution,
+                                                  double truncation) {
+  if (distribution != Distribution::kTruncatedGaussian) truncation = 0.0;
+  std::uint64_t truncation_bits;
+  std::memcpy(&truncation_bits, &truncation, 8);
+  using Key = std::tuple<unsigned, int, std::uint64_t>;
+  static std::mutex mutex;
+  static std::map<Key, std::shared_ptr<const CachedTable>> cache;
+  const Key key{bits, static_cast<int>(distribution), truncation_bits};
+  {
+    const std::lock_guard<std::mutex> lock(mutex);
+    const auto it = cache.find(key);
+    if (it != cache.end()) return it->second;
+  }
+  // Built outside the lock; a concurrent duplicate build is harmless.
+  auto table = std::make_shared<CachedTable>();
+  table->levels = DecodeTable(bits, distribution, truncation);
+  table->checksum = TableChecksum(table->levels);
+  const std::lock_guard<std::mutex> lock(mutex);
+  return cache.emplace(key, std::move(table)).first->second;
 }
 
 }  // namespace dp3core::dysco

@@ -11,7 +11,7 @@ configs=()
 command -v g++ >/dev/null && configs+=("gcc-release:g++::Release" "gcc-debug:g++::Debug"
   "gcc-asan-ubsan:g++:-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer:Debug")
 if command -v clang++ >/dev/null; then
-  configs+=("clang-release:clang++::Release")
+  configs+=("clang-release:clang++::Release" "clang-tsan:clang++:-fsanitize=thread:RelWithDebInfo")
   # libc++ build only if the headers are installed.
   if echo '#include <vector>' | clang++ -stdlib=libc++ -x c++ -fsyntax-only - 2>/dev/null; then
     configs+=("clang-libcxx-release:clang++:-stdlib=libc++:Release")

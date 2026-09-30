@@ -12,6 +12,8 @@ Status: **pre-release, local development only.** Nothing here is published.
 
 ## Layers (planned)
 1. `core/`: C++17 library, arrays in, bytes out. No casacore, no DP3 dependency.
+   Chunk API in `dp3core/dysco/codec.h` (`EncodeData`, `DecodeData`, `EncodeWeights`,
+   `DecodeWeights`, `EncodedSize`, `Validate`). *Working; format still a draft.*
 2. `python/`: Zarr v3 array-to-bytes codecs (`zarr.codecs` entry point) and Zarr v2
    codecs (`numcodecs.codecs` entry point). *Not started.*
 3. `tensorstore/`: TensorStore integration (needs a pinned TensorStore). *Not started.*
@@ -30,6 +32,12 @@ or `scripts/check.sh`, which builds and tests every available compiler configura
 Requirements: CMake >= 3.20 (>= 3.24 once the TensorStore layer is enabled), a C++17
 compiler. Optional: GSL, used only by a test that compares our portable quantization
 tables with tables built the way the original Dysco builds them.
+
+Comparison with the original: configure with
+`-DDP3CORE_DYSCO_REFERENCE_DIR=<checkout of aroffringa/dysco>` (or set that environment
+variable for `scripts/check.sh`) to build `test_reference_dysco`, which compiles Dysco's
+casacore-free encoders from that checkout (nothing is copied into this repository; GSL
+required) and checks that side data, symbols and decoded values are bit-identical.
 
 ## Licence
 GPL-3.0-only (see `LICENSE`). This is a derivative work of Dysco, which is published

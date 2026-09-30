@@ -110,7 +110,7 @@ ChunkHeader MakeDataHeader(const Shape& shape, unsigned bits,
   h.nonce = nonce;
   // Validate the cheap fields before building the table.
   (void)Finish(h);
-  h.dict_checksum = TableChecksum(DecodeTable(bits, distribution, h.truncation));
+  h.dict_checksum = GetCachedTable(bits, distribution, h.truncation)->checksum;
   return Finish(h);
 }
 

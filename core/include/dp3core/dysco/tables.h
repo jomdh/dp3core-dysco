@@ -7,6 +7,7 @@
 #define DP3CORE_DYSCO_TABLES_H_
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "dp3core/dysco/types.h"
@@ -30,6 +31,17 @@ std::vector<float> DecodeTable(unsigned bits, Distribution distribution,
 /// XXH3-64 (seed 0) of the table serialized as float32 little-endian.
 /// This is the header's dict_checksum.
 std::uint64_t TableChecksum(const std::vector<float>& table);
+
+/// A table and its checksum, built once per (bits, distribution, truncation)
+/// and shared (thread-safe; the 16-bit table takes about a second to build).
+struct CachedTable {
+  std::vector<float> levels;  ///< DecodeTable(...)
+  std::uint64_t checksum;     ///< TableChecksum(levels)
+};
+/// @throws std::invalid_argument like DecodeTable.
+std::shared_ptr<const CachedTable> GetCachedTable(unsigned bits,
+                                                  Distribution distribution,
+                                                  double truncation);
 
 /// Low-level functions, public for tests and the equivalence harness.
 namespace portable {
