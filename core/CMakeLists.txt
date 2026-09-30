@@ -6,6 +6,7 @@ add_library(dp3core_dysco_core
   src/normalize.cc
   src/tables.cc
   src/version.cc
+  src/weights.cc
 )
 add_library(dp3core_dysco::core ALIAS dp3core_dysco_core)
 target_include_directories(dp3core_dysco_core

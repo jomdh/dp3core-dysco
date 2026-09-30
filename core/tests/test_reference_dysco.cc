@@ -260,3 +260,48 @@ void CompareAllNorms(Norm norm) {
 TEST_CASE(RowEqualsDysco) { CompareAllNorms(Norm::kRow); }
 TEST_CASE(RfEqualsDysco) { CompareAllNorms(Norm::kRF); }
 TEST_CASE(AfEqualsDysco) { CompareAllNorms(Norm::kAF); }
+
+#include <weightblockencoder.h>
+
+#include "weights.h"
+
+TEST_CASE(WeightsEqualDysco) {
+  std::uint64_t s = 11;
+  const std::size_t shapes[][3] = {{1, 1, 1}, {7, 5, 4}, {30, 16, 2}, {3, 64, 1}};
+  const std::size_t qs[] = {4, 256, 1024, 65536};
+  std::size_t mismatches = 0;
+  for (const auto& sh : shapes) {
+    for (std::size_t q : qs) {
+      for (int variant = 0; variant != 3; ++variant) {
+        const std::size_t nb = sh[0], nc = sh[1], np = sh[2];
+        std::vector<float> w(nb * nc * np);
+        for (auto& x : w) {
+          const std::uint64_t r = Mix64(++s);
+          x = variant == 0 ? 0.0f
+              : variant == 1 ? float(double(r >> 11) / double(1ull << 53) * 1e4)
+                             : float((r >> 40) % 5);  // many ties and zeros
+        }
+        TimeBlockBuffer<float> buffer(np, nc);
+        for (std::size_t b = 0; b != nb; ++b) buffer.SetData(b, 0, 1, &w[b * nc * np]);
+        ::WeightBlockEncoder theirs(np, nc, q);
+        float their_side = -1, our_side = -2;
+        std::vector<unsigned> their_sym(nb * nc);
+        std::vector<std::uint32_t> our_sym(nb * nc);
+        theirs.Encode(buffer, &their_side, their_sym.data());
+        detail::EncodeWeightBlock(w.data(), nb, nc, np, q, &our_side, our_sym.data());
+        mismatches += !SameFloat(their_side, our_side);
+        for (std::size_t i = 0; i != our_sym.size(); ++i) mismatches += their_sym[i] != our_sym[i];
+        theirs.InitializeDecode(&their_side);
+        TimeBlockBuffer<float> out(np, nc);
+        out.resize(nb);
+        for (std::size_t b = 0; b != nb; ++b) theirs.Decode(out, their_sym.data(), b);
+        std::vector<float> ours(w.size());
+        detail::DecodeWeightBlock(their_sym.data(), nb, nc, np, q, their_side, ours.data());
+        for (std::size_t b = 0; b != nb; ++b)
+          for (std::size_t i = 0; i != nc * np; ++i)
+            mismatches += !SameFloat(out[b].visibilities[i], ours[b * nc * np + i]);
+      }
+    }
+  }
+  CHECK_EQ(mismatches, std::size_t{0});
+}

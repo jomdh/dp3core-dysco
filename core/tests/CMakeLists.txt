@@ -16,6 +16,8 @@ dp3core_dysco_add_test(test_bitpack)
 dp3core_dysco_add_test(test_dither)
 dp3core_dysco_add_test(test_normalize)
 target_include_directories(test_normalize PRIVATE ${PROJECT_SOURCE_DIR}/core/src)
+dp3core_dysco_add_test(test_weights)
+target_include_directories(test_weights PRIVATE ${PROJECT_SOURCE_DIR}/core/src)
 
 if(DP3CORE_DYSCO_GSL_CROSSCHECK)
   find_package(GSL QUIET)
