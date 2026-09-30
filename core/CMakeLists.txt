@@ -3,6 +3,7 @@ add_library(dp3core_dysco_core
   src/bitpack.cc
   src/dither.cc
   src/header.cc
+  src/normalize.cc
   src/tables.cc
   src/version.cc
 )

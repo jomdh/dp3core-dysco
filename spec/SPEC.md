@@ -110,7 +110,26 @@ i      = ((((t × B + b) × F + f) × P + p) × 2 + c)      c = 0 real, 1 imagin
 For a finite normalized value `v` (as float), let `j` be the first level with `L[j] ≥ v`. If `j = 0` the symbol is 0; if no such level exists the symbol is `n−1`; otherwise with `lo = L[j−1]`, `hi = L[j]`: `mark = float(2^31) × (v − lo) / (hi − lo)` in float, and the symbol is `j` if `mark > float(u31(i))`, else `j−1`. Non-finite values get symbol `Q−1`.
 
 ## 8. Normalizations (draft)
-To be written with phase P1, porting `aftimeblockencoder.cc`, `rftimeblockencoder.cc` and `rowtimeblockencoder.cc`, with the loop order fixed as there.
+Ported from Dysco (`rowtimeblockencoder.cc`, `rftimeblockencoder.cc`, `aftimeblockencoder.cc` @ aa30453). The reference implementation is `core/src/normalize.cc`; where this text and that code differ, the code (which is verified bit-identical to Dysco) is authoritative until this section becomes normative.
+
+Common rules. Input values are converted to double; every scaling multiplies (or divides) the real and imaginary parts separately by a double. `maxLevel` = the last (largest) decode level. Side data are float32: a side value is computed in double and rounded to float once; "divide side value by `f`" means `side = float(double(side) / f)`. Maxima skip non-finite candidates. `RMS(set) = sqrt(Σ(re² + im²) / (2·count))` over values with both parts finite; with `count = 0` it is NaN (0/0), as in Dysco. `LC(v) = max(max(re, im), −min(re, im))` with C++ `std::max`/`std::min` argument order (a NaN in the first argument propagates). Loops run in the order written. Rows are baselines `b` in chunk order; `vis = f·P + p`.
+
+**Row.** For each row `b`: `m` = max over its values of `max(|re|, |im|)` (finite only, start 0); multiply the row by `maxLevel/m` (1 if `m = 0`); `side[b] = float(m / maxLevel)`.
+Decode: `x = float(double(L[s]) · double(side[b]))`.
+
+**RF.** (1) For each row `b`, each pol `p`: `m` = max of `max(|re|, |im|)` over channels (finite only); multiply by `maxLevel/m` (1 if `m = 0`); `side[F·P + b·P + p] = float(m / maxLevel)` (1 if `maxLevel = 0`). (2) For each `vis`: `m` = max over rows of the same quantity; `f = maxLevel/m` (1 if `m = 0`); `side[vis] = float(1/f)`; multiply that column by `f`.
+Decode: `x = float(double(L[s]) · (double(side[vis]) · double(side[F·P + b·P + p])))`.
+
+**AF** (with DyscoStMan's `fitToMaximum`). Antenna indices come from the antenna map; `A` = `n_antenna`.
+1. For each `vis`: `r` = RMS over rows; divide the column by `r` if `r ≠ 0`; `side[vis] = float(r)`.
+2. For each pol `p`: antenna RMS `g[0..A)` by iteration over the symmetric matrix `M[a1][a2]` = RMS of pol `p` over the row(s) of cross-correlation `(min, max)` (autocorrelations excluded; NaN when absent). Start `g = 1`. Up to 100 iterations while `precision > 1e-6` (initially 1): `next[i] = Σ_j M[i][j] / Σ_j g[j]` over `j ≠ i` with `g[j] ≠ 0` and `M[i][j]` finite (0 if the weight sum is 0); `g[i] = next[i]·0.8 + g[i]·0.2`; `mx` = max `g`; zero every `g[i] < mx·1e-5`; `precision = max |g[i] − next[i]| / mx`. Then multiply pol `p` of each row by `1/(g[a1]·g[a2])` (0 if the product is 0) and set `side[F·P + p·A + a] = float(g[a])`.
+3. For each `vis`: `m` = max `LC` over cross-correlation rows (finite only); scale the column by `f = maxLevel/m` (1 if `m = 0` or `maxLevel = 0`) and divide `side[vis]` by `f`.
+4. For each pol `p`, repeat: find the channel with the largest gain `Σ |re·k| + |im·k|` over cross rows (finite terms only), `k = maxLevel/m_ch − 1` (0 if `m_ch = 0`), strictly greater than the previous best (start 0); likewise per antenna with `m_a` = max `LC` over cross rows containing it and `k_a = maxLevel/m_a − 1`, each row contributing to both of its antennas. If the best antenna gain is strictly greater than the best channel gain: `f = maxLevel/m_a` (1 if `m_a = 0`); stop if `f < 1`, else divide `side[F·P + p·A + a]` by `f`, multiply pol `p` of every row by `f` once per occurrence of `a` in it (twice for its autocorrelation), and continue while `f > 1.01`. Otherwise with `f = k + 1` of the best channel (1 if none): stop if `f < 1`, else apply it as in step 3 to `vis = ch·P + p` and continue while `f > 1.001`.
+
+Autocorrelations are scaled like any other row and in practice clip at the table ends: use RF or Row when autocorrelations matter.
+Decode: `x = float(double(L[s]) · (double(side[vis]) · (double(g'[a1]) · double(g'[a2]))))` with `g'` the stored antenna factors of pol `p`.
+
+In all cases the symbol of a non-finite input decodes to NaN (`L[Q−1] = NaN`).
 
 ## 9. Weights (draft)
 Per block: `w[b][f] = min over p` of the input; `max` = the largest `w`, or 1 if it is 0; symbol = round-half-away-from-zero of `float(double(w) × (double(Q−1) / max))`; side data = `max`. Decoded value `= float(symbol × (double(max) / double(Q−1)))`, replicated over polarizations. Inputs MUST be finite and ≥ 0.

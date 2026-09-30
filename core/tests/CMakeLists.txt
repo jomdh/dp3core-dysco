@@ -14,6 +14,8 @@ dp3core_dysco_add_test(test_tables)
 dp3core_dysco_add_test(test_header)
 dp3core_dysco_add_test(test_bitpack)
 dp3core_dysco_add_test(test_dither)
+dp3core_dysco_add_test(test_normalize)
+target_include_directories(test_normalize PRIVATE ${PROJECT_SOURCE_DIR}/core/src)
 
 if(DP3CORE_DYSCO_GSL_CROSSCHECK)
   find_package(GSL QUIET)
@@ -35,12 +37,16 @@ if(DP3CORE_DYSCO_REFERENCE_DIR)
   find_package(GSL REQUIRED)
   # Dysco's own casacore-free sources, compiled unmodified (warnings off).
   add_library(dysco_reference STATIC
-    ${DP3CORE_DYSCO_REFERENCE_DIR}/stochasticencoder.cc)
+    ${DP3CORE_DYSCO_REFERENCE_DIR}/stochasticencoder.cc
+    ${DP3CORE_DYSCO_REFERENCE_DIR}/aftimeblockencoder.cc
+    ${DP3CORE_DYSCO_REFERENCE_DIR}/rftimeblockencoder.cc
+    ${DP3CORE_DYSCO_REFERENCE_DIR}/rowtimeblockencoder.cc)
   target_include_directories(dysco_reference SYSTEM PUBLIC ${DP3CORE_DYSCO_REFERENCE_DIR})
   target_compile_options(dysco_reference PRIVATE ${DP3CORE_DYSCO_DETERMINISM_FLAGS} -w)
   target_link_libraries(dysco_reference PUBLIC GSL::gsl)
   dp3core_dysco_add_test(test_reference_dysco)
   target_link_libraries(test_reference_dysco PRIVATE dysco_reference)
+  target_include_directories(test_reference_dysco PRIVATE ${PROJECT_SOURCE_DIR}/core/src)
   # Dysco's Dictionary::symbol() asserts iter > begin(), which fires for
   # values at or below the lowest level (symbol 0) in Debug builds; its
   # release behaviour (symbol 0) is what the format specifies.

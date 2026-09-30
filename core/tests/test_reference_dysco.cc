@@ -2,6 +2,7 @@
 // checkout of aroffringa/dysco (CMake: -DDP3CORE_DYSCO_REFERENCE_DIR=<path>).
 // Only Dysco's casacore-free parts are used. GPL-3.0, like this library.
 // SPDX-License-Identifier: GPL-3.0-only
+#include <cstring>
 #include <bytepacker.h>
 
 #include <cmath>
@@ -82,3 +83,180 @@ TEST_CASE(QuantizerEqualsDyscoEncodeWithDithering) {
     CHECK_EQ(mismatches, std::size_t{0});
   }
 }
+
+#include <cstring>
+// Dysco's timeblockbuffer.h uses memcpy without including <cstring>.
+#include <aftimeblockencoder.h>
+#include <rftimeblockencoder.h>
+#include <rowtimeblockencoder.h>
+
+#include <memory>
+#include <random>
+
+#include "normalize.h"
+
+namespace {
+
+bool SameFloat(float a, float b) {
+  if (std::isnan(a) && std::isnan(b)) return true;
+  std::uint32_t x, y;
+  std::memcpy(&x, &a, 4);
+  std::memcpy(&y, &b, 4);
+  return x == y;
+}
+
+struct RefBlock {
+  std::size_t n_ant, n_chan, n_pol;
+  std::vector<std::uint32_t> a1, a2;
+  std::vector<std::complex<float>> data;  // (baseline, channel, pol)
+};
+
+enum class Fill { kNormal, kZero, kNaN };
+
+RefBlock MakeBlock(std::size_t n_ant, std::size_t n_chan, std::size_t n_pol,
+                   bool autos, std::size_t missing_antenna, Fill fill,
+                   std::uint64_t seed) {
+  RefBlock b{n_ant, n_chan, n_pol, {}, {}, {}};
+  for (std::uint32_t i = 0; i != n_ant; ++i)
+    for (std::uint32_t j = autos ? i : i + 1; j < n_ant; ++j) {
+      if (i == missing_antenna || j == missing_antenna) continue;
+      b.a1.push_back(i);
+      b.a2.push_back(j);
+    }
+  std::uint64_t s = seed;
+  auto uniform = [&s]() { return double(Mix64(++s) >> 11) / double(1ull << 53); };
+  auto gauss = [&]() {
+    const double u = uniform() + 1e-300, v = uniform();
+    return std::sqrt(-2.0 * std::log(u)) * std::cos(6.283185307179586 * v);
+  };
+  std::vector<double> gain(n_ant), chan(n_chan * n_pol);
+  for (auto& g : gain) g = 0.2 + 3.0 * uniform();
+  for (auto& c : chan) c = 0.5 + uniform();
+  for (std::size_t r = 0; r != b.a1.size(); ++r)
+    for (std::size_t ch = 0; ch != n_chan; ++ch)
+      for (std::size_t p = 0; p != n_pol; ++p) {
+        std::complex<float> v;
+        if (fill == Fill::kZero) {
+          v = 0.0f;
+        } else if (fill == Fill::kNaN) {
+          v = {std::nanf(""), 1.0f};
+        } else {
+          const double scale = gain[b.a1[r]] * gain[b.a2[r]] * chan[ch * n_pol + p] *
+                               (b.a1[r] == b.a2[r] ? 30.0 : 1.0);
+          v = {float(scale * gauss()), float(scale * gauss())};
+          if (Mix64(s + 77) % 211 == 0) v = {std::nanf(""), 0.0f};
+          if (Mix64(s + 78) % 307 == 0) v = {1.0f, std::numeric_limits<float>::infinity()};
+          if (Mix64(s + 79) % 401 == 0) v = 0.0f;
+        }
+        b.data.push_back(v);
+      }
+  return b;
+}
+
+enum class Norm { kRow, kRF, kAF };
+
+// Encodes the block with Dysco and with this port (same table, same
+// mt19937 dither stream) and compares side data, symbols and decoded values.
+void CompareWithDysco(const RefBlock& b, Norm norm, std::size_t quant_count,
+                      unsigned rng_seed) {
+  const auto encoder =
+      dyscostman::StochasticEncoder<float>::TruncatedGausEncoder(quant_count, 2.5, 1.0);
+  std::vector<float> levels(quant_count);
+  for (std::size_t s = 0; s != quant_count - 1; ++s)
+    levels[s] = encoder.Decode(static_cast<unsigned>(s));
+  levels[quant_count - 1] = std::nanf("");
+  const std::size_t n_levels = quant_count - 1;
+
+  const std::size_t n_row = b.a1.size();
+  const std::size_t vis_per_row = b.n_chan * b.n_pol;
+  std::unique_ptr<TimeBlockEncoder> theirs;
+  switch (norm) {
+    case Norm::kRow: theirs = std::make_unique<RowTimeBlockEncoder>(b.n_pol, b.n_chan); break;
+    case Norm::kRF: theirs = std::make_unique<RFTimeBlockEncoder>(b.n_pol, b.n_chan); break;
+    case Norm::kAF: theirs = std::make_unique<AFTimeBlockEncoder>(b.n_pol, b.n_chan, true); break;
+  }
+  TimeBlockBuffer<std::complex<float>> buffer(b.n_pol, b.n_chan);
+  for (std::size_t r = 0; r != n_row; ++r)
+    buffer.SetData(r, b.a1[r], b.a2[r], &b.data[r * vis_per_row]);
+  const std::size_t n_meta = theirs->MetaDataCount(n_row, b.n_pol, b.n_chan, b.n_ant);
+  std::vector<float> their_meta(n_meta, -1.0f);
+  std::vector<unsigned> their_symbols(n_row * vis_per_row * 2);
+  std::mt19937 rnd(rng_seed);
+  theirs->EncodeWithDithering(encoder, buffer, their_meta.data(), their_symbols.data(),
+                              b.n_ant, rnd);
+
+  detail::BlockLayout layout;
+  layout.n_baseline = n_row;
+  layout.n_channel = b.n_chan;
+  layout.n_pol = b.n_pol;
+  layout.n_antenna = b.n_ant;
+  layout.antenna1 = b.a1.data();
+  layout.antenna2 = b.a2.data();
+  std::vector<std::complex<double>> work(b.data.begin(), b.data.end());
+  std::vector<float> our_meta(n_meta, -2.0f);
+  const double max_level = levels[n_levels - 1];
+  switch (norm) {
+    case Norm::kRow: detail::NormalizeRow(work.data(), layout, max_level, our_meta.data()); break;
+    case Norm::kRF: detail::NormalizeRF(work.data(), layout, max_level, our_meta.data()); break;
+    case Norm::kAF: detail::NormalizeAF(work.data(), layout, max_level, our_meta.data()); break;
+  }
+  std::mt19937 rnd2(rng_seed);
+  auto dist = dyscostman::StochasticEncoder<float>::GetDitherDistribution();
+  std::vector<std::uint32_t> our_symbols(their_symbols.size());
+  for (std::size_t i = 0; i != work.size(); ++i) {
+    our_symbols[2 * i] = QuantizeDithered(float(work[i].real()), levels.data(), n_levels, dist(rnd2));
+    our_symbols[2 * i + 1] = QuantizeDithered(float(work[i].imag()), levels.data(), n_levels, dist(rnd2));
+  }
+
+  std::size_t meta_diff = 0, symbol_diff = 0, decode_diff = 0;
+  for (std::size_t i = 0; i != n_meta; ++i) meta_diff += !SameFloat(our_meta[i], their_meta[i]);
+  for (std::size_t i = 0; i != our_symbols.size(); ++i) symbol_diff += our_symbols[i] != their_symbols[i];
+
+  // Decode Dysco's symbols with both decoders.
+  theirs->InitializeDecode(their_meta.data(), n_row, b.n_ant);
+  TimeBlockBuffer<std::complex<float>> out(b.n_pol, b.n_chan);
+  out.resize(n_row);
+  for (std::size_t r = 0; r != n_row; ++r)
+    theirs->Decode(encoder, out, their_symbols.data(), r, b.a1[r], b.a2[r]);
+  std::vector<std::complex<float>> ours(n_row * vis_per_row);
+  switch (norm) {
+    case Norm::kRow: detail::DenormalizeRow(their_symbols.data(), levels.data(), layout, their_meta.data(), ours.data()); break;
+    case Norm::kRF: detail::DenormalizeRF(their_symbols.data(), levels.data(), layout, their_meta.data(), ours.data()); break;
+    case Norm::kAF: detail::DenormalizeAF(their_symbols.data(), levels.data(), layout, their_meta.data(), ours.data()); break;
+  }
+  for (std::size_t r = 0; r != n_row; ++r)
+    for (std::size_t i = 0; i != vis_per_row; ++i) {
+      const auto t = out[r].visibilities[i];
+      const auto o = ours[r * vis_per_row + i];
+      decode_diff += !SameFloat(t.real(), o.real()) || !SameFloat(t.imag(), o.imag());
+    }
+  if (meta_diff || symbol_diff || decode_diff)
+    std::cerr << "norm " << int(norm) << " Q " << quant_count << " rows " << n_row
+              << ": side " << meta_diff << "/" << n_meta << ", symbols " << symbol_diff
+              << ", decoded " << decode_diff << '\n';
+  CHECK_EQ(meta_diff, std::size_t{0});
+  CHECK_EQ(symbol_diff, std::size_t{0});
+  CHECK_EQ(decode_diff, std::size_t{0});
+}
+
+void CompareAllNorms(Norm norm) {
+  const std::size_t qs[] = {4, 64, 1024, 65536};
+  unsigned seed = 1;
+  for (std::size_t q : qs) {
+    CompareWithDysco(MakeBlock(8, 7, 4, true, 99, Fill::kNormal, seed), norm, q, seed); ++seed;
+    CompareWithDysco(MakeBlock(8, 7, 4, false, 99, Fill::kNormal, seed), norm, q, seed); ++seed;
+    CompareWithDysco(MakeBlock(10, 3, 2, true, 4, Fill::kNormal, seed), norm, q, seed); ++seed;
+    CompareWithDysco(MakeBlock(5, 1, 1, false, 99, Fill::kNormal, seed), norm, q, seed); ++seed;
+    CompareWithDysco(MakeBlock(2, 16, 4, false, 99, Fill::kNormal, seed), norm, q, seed); ++seed;
+    CompareWithDysco(MakeBlock(6, 4, 4, true, 99, Fill::kZero, seed), norm, q, seed); ++seed;
+    CompareWithDysco(MakeBlock(6, 4, 4, true, 99, Fill::kNaN, seed), norm, q, seed); ++seed;
+  }
+  // A LOFAR-like block: 38 stations with autos, 16 channels, 4 pols.
+  CompareWithDysco(MakeBlock(38, 16, 4, true, 99, Fill::kNormal, 1000), norm, 1024, 1000);
+}
+
+}  // namespace
+
+TEST_CASE(RowEqualsDysco) { CompareAllNorms(Norm::kRow); }
+TEST_CASE(RfEqualsDysco) { CompareAllNorms(Norm::kRF); }
+TEST_CASE(AfEqualsDysco) { CompareAllNorms(Norm::kAF); }
