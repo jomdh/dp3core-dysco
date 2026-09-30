@@ -11,6 +11,7 @@ endfunction()
 
 dp3core_dysco_add_test(test_version)
 dp3core_dysco_add_test(test_tables)
+dp3core_dysco_add_test(test_header)
 
 if(DP3CORE_DYSCO_GSL_CROSSCHECK)
   find_package(GSL QUIET)

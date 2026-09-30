@@ -6,7 +6,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 root="${1:-build-check}"
 configs=()
-command -v g++ >/dev/null && configs+=("gcc-release:g++::Release" "gcc-debug:g++::Debug")
+command -v g++ >/dev/null && configs+=("gcc-release:g++::Release" "gcc-debug:g++::Debug"
+  "gcc-asan-ubsan:g++:-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer:Debug")
 if command -v clang++ >/dev/null; then
   configs+=("clang-release:clang++::Release")
   # libc++ build only if the headers are installed.
