@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 add_library(dp3core_dysco_core
+  src/tables.cc
   src/version.cc
 )
 add_library(dp3core_dysco::core ALIAS dp3core_dysco_core)

@@ -56,8 +56,8 @@ inline void ReportFailure(const char* file, int line, const std::string& what) {
 
 #define CHECK_EQ(a, b)                                                     \
   do {                                                                     \
-    const auto& dysco_a_ = (a);                                            \
-    const auto& dysco_b_ = (b);                                            \
+    const auto dysco_a_ = (a);                                             \
+    const auto dysco_b_ = (b);                                             \
     if (!(dysco_a_ == dysco_b_)) {                                         \
       std::ostringstream dysco_s_;                                         \
       dysco_s_ << #a " == " #b " (" << dysco_a_ << " vs " << dysco_b_ << ")"; \
