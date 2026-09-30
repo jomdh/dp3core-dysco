@@ -4,6 +4,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <bytepacker.h>
 
+#include <cmath>
+
 #include <cstdint>
 #include <vector>
 
@@ -44,5 +46,39 @@ TEST_CASE(PackingEqualsDyscoBytePacker) {
         CHECK(same);
       }
     }
+  }
+}
+
+#include <stochasticencoder.h>
+
+#include "dp3core/dysco/dither.h"
+
+TEST_CASE(QuantizerEqualsDyscoEncodeWithDithering) {
+  // Dysco's own table (GSL) and quantizer versus QuantizeDithered on the same
+  // table: the quantizer logic must agree for every input and dither.
+  const std::size_t quant_counts[] = {4, 16, 256, 4096};
+  std::uint64_t state = 5;
+  for (std::size_t q : quant_counts) {
+    const auto encoder =
+        dyscostman::StochasticEncoder<float>::TruncatedGausEncoder(q, 2.5, 1.0);
+    std::vector<float> levels(q - 1);
+    for (std::size_t s = 0; s != q - 1; ++s)
+      levels[s] = encoder.Decode(static_cast<unsigned>(s));
+    std::size_t mismatches = 0;
+    for (int i = 0; i != 200000; ++i) {
+      const std::uint64_t r = Mix64(++state);
+      float v;
+      if (i % 50 == 0) {
+        v = levels[r % levels.size()];  // exactly on a level
+      } else {
+        v = static_cast<float>((double(r >> 11) / double(1ull << 53) - 0.5) * 7.0);
+      }
+      if (i % 997 == 0) v = std::nanf("");
+      const std::uint32_t dither = static_cast<std::uint32_t>(Mix64(r) >> 33);
+      const unsigned theirs = encoder.EncodeWithDithering(v, dither);
+      const std::uint32_t ours = QuantizeDithered(v, levels.data(), levels.size(), dither);
+      if (theirs != ours) ++mismatches;
+    }
+    CHECK_EQ(mismatches, std::size_t{0});
   }
 }

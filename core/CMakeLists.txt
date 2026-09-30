@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 add_library(dp3core_dysco_core
   src/bitpack.cc
+  src/dither.cc
   src/header.cc
   src/tables.cc
   src/version.cc
