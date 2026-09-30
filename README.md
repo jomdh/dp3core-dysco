@@ -58,6 +58,9 @@ Zarr v2: `dp3core_dysco.numcodecs.Dysco(chunk_shape=..., ...)` as the `compresso
 filters. Only the canonical axis order (time, baseline, frequency, polarization) is
 supported; use a `transpose` codec in front for other layouts.
 `scripts/check-python.sh [venv]` builds into a venv and runs the Python tests.
+`dp3core_dysco._reference` is a slow pure-NumPy decoder written from `spec/SPEC.md` only
+(no compiled code); the tests use it to show the specification is sufficient. It is not a
+user API.
 
 ## Licence
 GPL-3.0-only (see `LICENSE`). This is a derivative work of Dysco, which is published
