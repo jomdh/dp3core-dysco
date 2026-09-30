@@ -1,0 +1,30 @@
+# dp3core-dysco-zarr: a standalone Dysco codec for Zarr.
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Convention notice: codec names, configuration fields and the chunk layout are
+# unofficial DP3Core conventions, not endorsed by LOFAR, ASTRON or the MSv4 group.
+
+cmake_minimum_required(VERSION 3.20)
+project(dp3core_dysco VERSION 0.1.0 LANGUAGES CXX)
+
+option(DP3CORE_DYSCO_TENSORSTORE "Build the TensorStore integration (needs CMake >= 3.24)" OFF)
+option(DP3CORE_DYSCO_WERROR "Treat compiler warnings as errors" OFF)
+option(DP3CORE_DYSCO_GSL_CROSSCHECK "Compare the portable tables with GSL-built tables in the tests (if GSL is found)" ON)
+option(BUILD_TESTING "Build the tests" ON)
+
+if(DP3CORE_DYSCO_TENSORSTORE)
+  # D9 / tensorstore-build-cost.md: TensorStore needs CMake >= 3.24.
+  if(CMAKE_VERSION VERSION_LESS 3.24)
+    message(FATAL_ERROR "DP3CORE_DYSCO_TENSORSTORE=ON needs CMake >= 3.24 (found ${CMAKE_VERSION}).")
+  endif()
+  message(FATAL_ERROR "DP3CORE_DYSCO_TENSORSTORE: the TensorStore layer is not implemented yet (phase P4).")
+endif()
+
+include(cmake/Determinism.cmake)
+
+add_subdirectory(core)
+
+if(BUILD_TESTING)
+  enable_testing()
+  add_subdirectory(core/tests)
+endif()
