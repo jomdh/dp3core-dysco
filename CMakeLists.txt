@@ -12,6 +12,7 @@ option(DP3CORE_DYSCO_WERROR "Treat compiler warnings as errors" OFF)
 option(DP3CORE_DYSCO_GSL_CROSSCHECK "Compare the portable tables with GSL-built tables in the tests (if GSL is found)" ON)
 option(BUILD_TESTING "Build the tests" ON)
 option(DP3CORE_DYSCO_PYTHON "Build the Python extension (normally via pip / scikit-build-core)" OFF)
+option(DP3CORE_DYSCO_HARNESS "Build the casacore Dysco equivalence harness (needs casacore)" OFF)
 
 if(DP3CORE_DYSCO_TENSORSTORE)
   # D9 / tensorstore-build-cost.md: TensorStore needs CMake >= 3.24.
@@ -35,4 +36,8 @@ endif()
 
 if(BUILD_TESTING)
   add_subdirectory(core/tests)
+endif()
+
+if(DP3CORE_DYSCO_HARNESS)
+  add_subdirectory(harness)
 endif()
