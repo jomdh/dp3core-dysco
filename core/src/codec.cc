@@ -123,9 +123,67 @@ std::size_t EncodedSize(const WeightParams& params, const Shape& shape) {
   return ToSize(EncodedSize(MakeWeightsHeader(shape, params.bits)));
 }
 
+namespace {
+
+// Denormalization factor of value i in one time slot. Matches Denormalize*.
+double DenormScale(Normalization normalization, const detail::BlockLayout& layout,
+                   const float* side, std::size_t i) {
+  const std::size_t vis_per_row = layout.n_channel * layout.n_pol;
+  const std::size_t row = i / vis_per_row;
+  const std::size_t vis = i % vis_per_row;
+  if (normalization == Normalization::kRow) return side[row];
+  const std::size_t pol = vis % layout.n_pol;
+  if (normalization == Normalization::kRF) {
+    return static_cast<double>(side[vis]) *
+           static_cast<double>(side[vis_per_row + row * layout.n_pol + pol]);
+  }
+  const float* antenna = side + vis_per_row;
+  return static_cast<double>(side[vis]) *
+         static_cast<double>(antenna[layout.antenna1[row] + pol * layout.n_antenna]) *
+         static_cast<double>(antenna[layout.antenna2[row] + pol * layout.n_antenna]);
+}
+
+// Outermost interval only, and only when the reconstructed step exceeds 20.
+// That step is the wide tail of the truncated Gaussian at high gain. A dither
+// miss there is one code past the nearer centroid and larger than the errors
+// interior bins produce. The nearer centroid keeps the sample inside that range.
+constexpr double kWideOuterStep = 20.0;
+
+std::uint32_t QuantizeWideOuter(float value, const float* levels, std::size_t n_levels,
+                                std::uint32_t dither, double scale) {
+  if (!(scale > 0.0) || n_levels < 2) {
+    return QuantizeDithered(value, levels, n_levels, dither);
+  }
+  if (!std::isfinite(value)) return static_cast<std::uint32_t>(n_levels);
+  const float* end = levels + n_levels;
+  const float* right = std::lower_bound(levels, end, value);
+  if (right == levels || right == end) {
+    return QuantizeDithered(value, levels, n_levels, dither);
+  }
+  const std::size_t j = static_cast<std::size_t>(right - levels);
+  const bool outermost = j == 1 || j + 1 == n_levels;
+  const float hi = *right;
+  const float lo = *(right - 1);
+  const double width = std::fabs((static_cast<double>(hi) - static_cast<double>(lo)) * scale);
+  if (outermost && width > kWideOuterStep) {
+    const double left = static_cast<double>(value) - static_cast<double>(lo);
+    const double right_span = static_cast<double>(hi) - static_cast<double>(value);
+    return static_cast<std::uint32_t>(left <= right_span ? j - 1 : j);
+  }
+  return QuantizeDithered(value, levels, n_levels, dither);
+}
+
+}  // namespace
+
 void EncodeData(const DataParams& params, const Shape& shape, const AntennaMap* map,
                 const std::complex<float>* in, std::byte* out, std::size_t out_size,
                 const EncodeOptions& options) {
+  EncodeData(params, shape, map, in, out, out_size, options, false);
+}
+
+void EncodeData(const DataParams& params, const Shape& shape, const AntennaMap* map,
+                const std::complex<float>* in, std::byte* out, std::size_t out_size,
+                const EncodeOptions& options, bool nearest_wide_outer_bin) {
   (void)DataHeader(params, shape, map, 0);  // validate before hashing the input
   const std::size_t per_block = shape.n_baseline * shape.n_channel * shape.n_pol;
   const std::uint64_t nonce = ChunkNonce(in, shape.n_time * per_block);
@@ -181,10 +239,16 @@ void EncodeData(const DataParams& params, const Shape& shape, const AntennaMap* 
     std::vector<std::uint32_t> symbols(2 * per_block);
     const std::uint64_t base = static_cast<std::uint64_t>(t) * per_block * 2;
     for (std::size_t i = 0; i != per_block; ++i) {
-      symbols[2 * i] = QuantizeDithered(static_cast<float>(work[i].real()), levels.data(),
-                                        n_levels, DitherValue(key, base + 2 * i));
-      symbols[2 * i + 1] = QuantizeDithered(static_cast<float>(work[i].imag()), levels.data(),
-                                            n_levels, DitherValue(key, base + 2 * i + 1));
+      const double scale =
+          nearest_wide_outer_bin ? DenormScale(params.normalization, layout, side.data(), i) : 0.0;
+      const auto quantize = [&](float part, std::uint32_t dither) {
+        return nearest_wide_outer_bin
+                   ? QuantizeWideOuter(part, levels.data(), n_levels, dither, scale)
+                   : QuantizeDithered(part, levels.data(), n_levels, dither);
+      };
+      symbols[2 * i] = quantize(static_cast<float>(work[i].real()), DitherValue(key, base + 2 * i));
+      symbols[2 * i + 1] =
+          quantize(static_cast<float>(work[i].imag()), DitherValue(key, base + 2 * i + 1));
     }
     std::byte* block_out = blocks + t * block_bytes;
     for (std::size_t k = 0; k != side_count; ++k) PutFloat(block_out + 4 * k, side[k]);

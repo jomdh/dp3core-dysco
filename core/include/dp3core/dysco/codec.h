@@ -61,6 +61,14 @@ void EncodeData(const DataParams& params, const Shape& shape, const AntennaMap* 
                 const std::complex<float>* in, std::byte* out, std::size_t out_size,
                 const EncodeOptions& options = {});
 
+/// Same encode, with one extra rule. On the outermost dictionary interval,
+/// when the denormalized distance between the two centroids is greater than
+/// 20, the nearer centroid is stored instead of the dithered one. Interior
+/// intervals stay dithered. The default overload does not apply this rule.
+void EncodeData(const DataParams& params, const Shape& shape, const AntennaMap* map,
+                const std::complex<float>* in, std::byte* out, std::size_t out_size,
+                const EncodeOptions& options, bool nearest_wide_outer_bin);
+
 /// Decodes a chunk that must hold exactly @p shape. @p map is needed for AF
 /// unless the chunk embeds it; if both are present they must be equal.
 /// @throws FormatError for invalid or mismatching bytes,
